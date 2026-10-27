@@ -1,0 +1,25 @@
+.env
+__pycache__/
+*.pyc
+native_monitor.log
+native_monitor.error.log
+native_monitor.log.previous
+native_monitor.error.log.previous
+startup_reconnection.log
+wifi_failover_verification.json
+.*.lock
+deployment_report.json
+boot_install.log
+
+# Keep local credentials and runtime artifacts private.
+.env.*
+!.env.example
+*.log
+*.log.*
+*.lock
+*.pem
+*.key
+*.p12
+*.pfx
+.venv/
+venv/
