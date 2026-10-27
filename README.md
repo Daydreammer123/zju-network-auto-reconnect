@@ -1,4 +1,4 @@
-# ZJU Network Auto Reconnect｜浙大校园网自动重连
+# ZJU Network Auto Reconnect｜ZJU校园网自动重连
 
 在 Windows 上自动恢复校园网连接、维护认证，并在 Clash 系统代理不可用时切换
 `ZJUWLAN`（A）与 `ZJUWLAN-Secure`（B）。同时提供网易 UU 远程进程守护。
@@ -23,11 +23,10 @@
 单无线网卡切换会短暂断流，不能保证已有 TCP/远程连接无缝迁移。
 详细策略、代理结果分类和失败回退见 [WIFI_FAILOVER.md](WIFI_FAILOVER.md)。
 
-## AGENT 一键下载安装提示词
+## AGENT 下载安装提示词
 
 将下面整段提示词复制给具有本机终端和文件操作能力的 AGENT，即可由其协助完成下载安装。
-仓库为私有，须使用有访问权限的 GitHub 账号；账号密码仅在本机填写，不要发送到对话中。
-“一键”指由 AGENT 按流程执行，GitHub 登录、凭据填写和管理员授权仍需本人完成。
+注意账号密码仅在本机填写，不要发送到对话中。
 
 ```text
 请在这台 Windows 电脑上下载安装并配置 ZJU Network Auto Reconnect：
