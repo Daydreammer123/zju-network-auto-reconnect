@@ -1,10 +1,9 @@
-# ZJU 校园网原生后台监控
+# ZJU Network Auto Reconnect｜浙大校园网自动重连
 
 在 Windows 上自动恢复校园网连接、维护认证，并在 Clash 系统代理不可用时切换
 `ZJUWLAN`（A）与 `ZJUWLAN-Secure`（B）。同时提供网易 UU 远程进程守护。
 
-**运行和全部单元测试均只依赖 Python 标准库**，无需 Docker、Selenium、浏览器或 WebDriver。
-旧容器、镜像及浏览器认证入口已移除，唯一运行入口为 `host_reconnect.py`。
+**运行和全部单元测试均只依赖 Python 标准库**，通过 Windows 原生接口管理网络连接和后台进程。
 
 ## 功能与行为
 
@@ -19,7 +18,7 @@
 | 认证维护 | 根据服务器实际在线状态重登，不设置固定日期强制注销 |
 | UU 远程守护 | 独立线程监控主进程，升级期间等待，退出后按配置自动恢复 |
 | 断线备用恢复 | 同一配置恢复连续失败两次后，限速尝试另一已保存网络，不等待代理启动 |
-| 登录前联网 | 可选受保护的 SYSTEM 开机组件，恢复 WLAN/A 认证并守护 UU 官方服务 |
+| PC重启后自动联网 | 可选受保护的 SYSTEM 开机组件，无需先登录 Windows 即可恢复 WLAN/A 认证并守护 UU 官方服务 |
 
 单无线网卡切换会短暂断流，不能保证已有 TCP/远程连接无缝迁移。
 详细策略、代理结果分类和失败回退见 [WIFI_FAILOVER.md](WIFI_FAILOVER.md)。
@@ -114,19 +113,20 @@ python -X utf8 host_reconnect.py --diagnose --interface WLAN
 ```
 
 计划任务名称为 `ZJU-Automatic-Reconnection`，在当前用户登录时调用
-`startup_reconnection.ps1`，**持续监督原生后台监控**。无论单网络还是双网络模式，
-均不会调用或等待容器运行时。任务参数使用 PowerShell、Python 和项目的绝对路径，不包含账号密码。
+`startup_reconnection.ps1`，**持续监督后台监控进程**。
+任务参数使用 PowerShell、Python 和项目的绝对路径，不包含账号密码。
 
-从旧版升级、移动项目目录或更换 Python 解释器后，应重新运行 `enable` 更新任务参数。
+移动项目目录或更换 Python 解释器后，应重新运行 `enable` 更新任务参数。
 `disable` 只关闭后续登录自启动，不停止已运行的监控。
 
-### 重启后停留在登录界面也要联网、UU 远控
+## PC重启后自动联网
 
-登录任务不能覆盖登录前场景。现已提供独立的、需管理员授权的开机组件，使用
+如需 PC 重启后在 Windows 登录界面自动联网，须另行安装需管理员授权的 SYSTEM 开机组件。
+该组件使用
 `C:\ProgramData\ZJU-Automatic-Reconnection` 内的受保护代码、配置和官方独立 Python，
 不从用户可写的项目或 Anaconda 目录以 SYSTEM 运行。
 它不修改 Windows Wi-Fi 连接模式、802.1X、自动登录或 Clash；检测到用户登录后让出网络控制。
-UU 登录前远控复用已安装的 `GameViewerService`，而不是启动 Session 0 桌面客户端。
+重启后尚未登录 Windows 时，UU 远控依赖已安装的 `GameViewerService`，不会启动 Session 0 桌面客户端。
 安装、安全说明、日志和用户验收见 [BOOT_RECOVERY.md](BOOT_RECOVERY.md)。
 
 ## 网易 UU 远程守护
@@ -170,13 +170,18 @@ python -S -X utf8 -m unittest discover -s tests -p 'test_*.py'
 
 | 文件 | 用途 |
 | --- | --- |
-| `host_reconnect.py` | 唯一运行入口，认证维护与后台线程协调 |
+| `host_reconnect.py` | 校园网认证维护与后台线程协调 |
 | `wifi_failover.py` / `wifi_control.py` | A/B 状态机、失败回退、Windows WLAN 读取与连接 |
 | `network_checks.py` / `srun_client.py` | 直连/代理探测与门户原生认证 |
 | `uu_remote_monitor.py` | UU 远程守护 |
 | `native_monitor.ps1` | 后台启动、停止、状态查看 |
 | `configure_autostart.ps1` / `startup_reconnection.ps1` | 登录计划任务与原生启动流程 |
-| `configure_boot.ps1` / `runtime_control.py` | 受保护的登录前部署、跨会话互斥与会话检测 |
+| `configure_boot.ps1` / `runtime_control.py` | PC重启后自动联网组件的受保护部署、跨会话互斥与会话检测 |
 
 账号密码仅保存在本地 `.env` 或进程环境变量中，`.env` 和运行日志已排除出 Git。
 建议仅在个人设备上使用，并遵守校园网络使用规定。
+
+## 致谢
+
+感谢 [MUXYV/Automatic_reconnection](https://github.com/MUXYV/Automatic_reconnection.git)
+项目提供的校园网自动重连思路与参考。
