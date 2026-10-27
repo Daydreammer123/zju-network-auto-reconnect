@@ -23,6 +23,66 @@
 单无线网卡切换会短暂断流，不能保证已有 TCP/远程连接无缝迁移。
 详细策略、代理结果分类和失败回退见 [WIFI_FAILOVER.md](WIFI_FAILOVER.md)。
 
+## AGENT 一键下载安装提示词
+
+将下面整段提示词复制给具有本机终端和文件操作能力的 AGENT，即可由其协助完成下载安装。
+仓库为私有，须使用有访问权限的 GitHub 账号；账号密码仅在本机填写，不要发送到对话中。
+“一键”指由 AGENT 按流程执行，GitHub 登录、凭据填写和管理员授权仍需本人完成。
+
+```text
+请在这台 Windows 电脑上下载安装并配置 ZJU Network Auto Reconnect：
+https://github.com/Daydreammer123/zju-network-auto-reconnect
+
+请实际执行安装，而不只是给出命令；遇到权限、凭据或环境问题时说明阻塞，不要猜测成功。
+
+1. 先一次性确认安装目录、单网络或 A/B 双网络模式，以及是否启用登录自启动、
+   PC重启后自动联网和网易 UU 远程守护。未明确选择的可选功能不要启用。
+   说明启动监控后可能自动认证或恢复网络，得到确认后再启用。
+
+2. 检查 Windows、Git、GitHub CLI、Python 3.10+、PowerShell 和 WLAN 服务。
+   缺少工具时先征得安装许可，仅从官方来源安装；不要替换已有 Python 环境。
+   使用已有 GitHub CLI 登录状态访问私有仓库；如未登录，指导我通过
+   gh auth login --web --git-protocol https 完成授权，不索要或输出访问令牌。
+   无仓库访问权限时停止，不尝试改成公开仓库或绕过权限。
+
+3. 在确认的目录执行：
+   gh repo clone Daydreammer123/zju-network-auto-reconnect
+   若目标目录已有文件或已有部署，先检查并征询处理方式，不覆盖配置、不强制拉取、
+   不丢弃本地修改，不修改其他项目的 Git 远程地址。
+   进入项目后先阅读 README.md、WIFI_FAILOVER.md 和 BOOT_RECOVERY.md。
+
+4. 仅在 .env 不存在时，从 .env.example 复制创建。
+   提示我在本机编辑器填写校园网账号密码，填写后只检查必填项是否就绪，不回显值。
+   不把 .env、账号密码、令牌、Wi-Fi 密钥、代理订阅或完整日志读入对话、提交或上传。
+   根据所选模式设置非敏感配置，保留已有凭据；不安装第三方 Python 依赖。
+   A/B 模式必须确认两个 Wi-Fi 已在 Windows 保存，且两个 HTTPS 探测目标在 Clash
+   规则中实际走代理；不要读取 Wi-Fi 密钥，也不要擅自修改代理规则。
+
+5. 用选定的 Python 执行标准库测试：
+   python -S -X utf8 -m unittest discover -s tests -p 'test_*.py'
+   测试失败先报告原因，不继续启用监控。不要运行真实切网、注销认证或故障注入脚本。
+
+6. 配置就绪并确认可启动后，按我的选择启用登录自启动，再启动后台监控：
+   .\configure_autostart.ps1 enable
+   .\native_monitor.ps1 start
+   .\native_monitor.ps1 status
+   未选择登录自启动时跳过第一条。已有监控需更新配置时，先确认再按文档停止并重启，
+   不重复启动，也不要擅自停用其他安装的任务。
+
+7. 仅在我选择“PC重启后自动联网”并明确同意管理员操作后，按 BOOT_RECOVERY.md
+   从 python.org 下载脚本指定版本的官方独立运行时 ZIP，核验 SHA-256 和签名，
+   安装受保护的 SYSTEM 开机组件：
+   .\configure_boot.ps1 enable -RuntimeArchive '<已下载ZIP的完整路径>'
+   不绕过脚本校验，不从用户可写目录以 SYSTEM 运行；若以不同管理员账号提权，
+   用 -UserSid 指定实际使用本项目的用户。无法提权时给出待本人执行的完整命令。
+   登录自启动和 SYSTEM 开机组件是两项独立配置，不要混为一谈。
+
+8. 不修改 Windows 自动登录、Wi-Fi 安全配置、代理订阅或 UU 账号设置，
+   不自动重启、注销、锁屏或主动断网。UU 未安装时报告并跳过相关功能。
+   最后仅汇总安装结果、所选功能、后台进程和计划任务状态、失败项及停止方式。
+   区分“已安装/进程运行”和“网络恢复/远程访问已验证”；重启及端到端远控由我自行验收。
+```
+
 ## 环境与首次配置
 
 - Windows，Python **3.10 或以上**，PowerShell 和系统 WLAN 服务可用。
