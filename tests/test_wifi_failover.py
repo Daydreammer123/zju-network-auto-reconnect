@@ -103,6 +103,113 @@ class FailoverTests(unittest.TestCase):
         self.assertEqual(self.check(425), "switching")
         self.assertEqual(self.connect.call_args.args, (B, "WLAN"))
 
+    def reach_switch_limit(self, profile=B):
+        for now in range(0, 6000, 60):
+            state = self.check(now, wifi=snapshot(profile))
+            if state == "switching":
+                profile = A if profile == B else B
+            elif state == "switch_limit":
+                self.assertEqual(self.connect.call_count, self.monitor.config.proxy_max_switches)
+                return now, profile
+        self.fail("持续代理故障未达到切网保护上限")
+
+    def test_five_switches_stop_oscillation_but_keep_probing(self):
+        now, profile = self.reach_switch_limit()
+        self.assertEqual([call.args[0] for call in self.connect.call_args_list], [A, B, A, B, A])
+        probes = self.probe.call_count
+        for step in range(1, 101):
+            self.assertEqual(self.check(now + 60 * step, wifi=snapshot(profile)), "switch_limit")
+        self.assertEqual(self.connect.call_count, 5)
+        self.assertEqual(self.monitor.proxy_switches, 5)
+        self.assertEqual(self.probe.call_count, probes + 100)
+        self.assertEqual(self.monitor.next_probe, now + 6060)
+        self.assertEqual(self.check(now + 6001), "waiting_probe")
+        self.assertEqual(self.probe.call_count, probes + 100)
+
+    def test_switch_limit_applies_starting_from_a(self):
+        self.reach_switch_limit(A)
+        self.assertEqual([call.args[0] for call in self.connect.call_args_list], [B, A, B, A, B])
+
+    def test_custom_switch_limit_is_honored(self):
+        self.monitor.config = replace(self.config, proxy_max_switches=2)
+        self.reach_switch_limit()
+        self.assertEqual(self.monitor.proxy_switches, 2)
+
+    def test_proxy_recovery_rearms_switch_budget(self):
+        now, profile = self.reach_switch_limit()
+        self.assertEqual(self.check(now + 60, ProbeState.ONLINE), "online")
+        self.assertEqual(self.monitor.proxy_switches, 0)
+        self.assertEqual(self.monitor.failures, 0)
+        self.assertEqual(self.check(now + 120), "proxy_failed")
+        self.assertEqual(self.check(now + 180), "switching")
+        self.assertEqual(self.connect.call_count, 6)
+        self.assertEqual(self.monitor.proxy_switches, 1)
+        self.assertEqual(self.connect.call_args.args[0], B if profile == A else A)
+
+    def test_unknown_and_disabled_proxy_do_not_rearm_switch_budget(self):
+        now, _ = self.reach_switch_limit()
+        self.assertEqual(self.check(now + 60, ProbeState.UNKNOWN), "proxy_unknown")
+        self.assertEqual(self.check(now + 120, ProbeState.UNAVAILABLE), "proxy_unavailable")
+        self.assertEqual(self.monitor.proxy_switches, 5)
+        self.assertEqual(self.check(now + 180), "switch_limit")
+        self.assertEqual(self.connect.call_count, 5)
+
+    def test_connection_state_resets_do_not_rearm_switch_budget(self):
+        now, profile = self.reach_switch_limit()
+        self.assertEqual(self.check(now + 60, wifi=snapshot(radio_on=False)), "radio_off")
+        self.assertEqual(self.check(now + 120, wifi=snapshot(profile)), "switch_limit")
+        self.assertEqual(self.check(now + 180, wifi=snapshot("Other")), "unmanaged_wifi")
+        self.assertEqual(self.check(now + 240, wifi=snapshot(profile)), "switch_limit")
+        other = B if profile == A else A
+        self.assertEqual(self.check(now + 300, wifi=snapshot(other)), "switch_limit")
+        self.assertEqual(self.monitor.proxy_switches, 5)
+        self.assertEqual(self.connect.call_count, 5)
+
+    def test_failed_switch_requests_also_exhaust_switch_budget(self):
+        self.connect.return_value = False
+        for now in range(0, 6000, 60):
+            if self.check(now) == "switch_limit":
+                break
+        else:
+            self.fail("失败的连接请求未触发切网保护上限")
+        self.assertEqual(self.monitor.proxy_switches, 5)
+        self.assertEqual(self.connect.call_count, 5)
+        self.assertEqual(self.check(now + 600), "switch_limit")
+        self.assertEqual(self.connect.call_count, 5)
+
+    def test_final_switch_timeout_still_rolls_back_without_using_budget(self):
+        self.monitor.proxy_switches = 4
+        self.switch_to_a()
+        self.assertEqual(self.monitor.proxy_switches, 5)
+        offline = snapshot("", connected=False, link_ready=False, default_route=False)
+        self.assertEqual(self.check(90, wifi=offline), "rolling_back")
+        self.assertEqual(self.connect.call_args.args, (B, "WLAN"))
+        self.assertEqual(self.check(95, wifi=snapshot(B)), "switch_limit")
+        self.assertEqual(self.monitor.proxy_switches, 5)
+        self.assertEqual(self.connect.call_count, 2)
+
+    def test_switch_limit_does_not_block_disconnection_recovery(self):
+        now, profile = self.reach_switch_limit()
+        offline = snapshot("", connected=False, link_ready=False, default_route=False)
+        self.assertEqual(self.check(now + 60, wifi=offline), "reconnecting")
+        self.assertEqual(self.connect.call_args.args, (profile, "WLAN"))
+        self.assertEqual(self.check(now + 65, wifi=snapshot(profile)), "switch_limit")
+        self.assertEqual(self.monitor.proxy_switches, 5)
+        self.assertEqual(self.connect.call_count, 6)
+
+    def test_request_guard_cannot_exceed_switch_budget(self):
+        self.check(0, ProbeState.ONLINE)
+        self.monitor.proxy_switches = 5
+        self.assertEqual(self.monitor._request(A, switching=True)[0], "switch_limit")
+        self.connect.assert_not_called()
+
+    def test_cancelled_switch_does_not_use_budget(self):
+        self.check(0)
+        self.wifi.side_effect = [snapshot(B), snapshot("Other")]
+        self.assertEqual(self.check(60), "unmanaged_wifi")
+        self.assertEqual(self.monitor.proxy_switches, 0)
+        self.connect.assert_not_called()
+
     def test_cooldown_recovery_stays_on_current_network(self):
         self.switch_to_a()
         self.check(65, wifi=snapshot(A))
@@ -346,9 +453,16 @@ class ConfigurationTests(unittest.TestCase):
             self.assertFalse(failover.failover_enabled())
             config = failover.FailoverConfig.from_env("WLAN")
         self.assertEqual((config.interval, config.threshold, config.cooldown), (60, 2, 300))
+        self.assertEqual(config.proxy_max_switches, 5)
+
+    def test_proxy_switch_limit_can_be_configured(self):
+        with patch.dict(os.environ, {"PROXY_MAX_SWITCHES": "3"}, clear=True):
+            self.assertEqual(failover.FailoverConfig.from_env("WLAN").proxy_max_switches, 3)
 
     def test_invalid_configuration_is_rejected_without_side_effects(self):
         for overrides in ({"PROXY_CHECK_INTERVAL": "0"}, {"PROXY_FAILURE_THRESHOLD": "-1"},
+                          {"PROXY_MAX_SWITCHES": "0"}, {"PROXY_MAX_SWITCHES": "-1"},
+                          {"PROXY_MAX_SWITCHES": "101"}, {"PROXY_MAX_SWITCHES": "nan"},
                           {"PROXY_CHECK_TIMEOUT": "nan"}, {"ZJU_WIFI_PROFILE_B": A},
                           {"PROXY_CHECK_URLS": "http://one.example,https://two.example"}):
             with self.subTest(overrides=overrides), patch.dict(os.environ, overrides, clear=True):

@@ -205,7 +205,8 @@ class HostMonitor:
             else:
                 endpoint = system_proxy()
                 self.log(f"系统代理={endpoint.host + ':' + str(endpoint.port) if endpoint else '未开启或不受支持'}")
-                self.log(f"代理间隔={config.interval} 秒；连续失败阈值={config.threshold}；冷却={config.cooldown} 秒。")
+                self.log(f"代理间隔={config.interval} 秒；连续失败阈值={config.threshold}；冷却={config.cooldown} 秒；"
+                         f"每轮故障切网尝试上限={config.proxy_max_switches} 次。")
             self.log("此诊断未发起外网/门户请求；B 不执行网页登录认证。")
             return
         self.log(f"物理网卡具备 IPv4 默认路由：{physical_link(self.interface)}")
@@ -224,7 +225,8 @@ class HostMonitor:
             config = self.failover.config
             self.log(f"Windows 双网络监控已启动：A={config.profile_a}；B={config.profile_b}；接口={config.interface}。")
             if not self.boot_network:
-                self.log(f"代理检测间隔 {config.interval} 秒，连续失败 {config.threshold} 轮切换，冷却 {config.cooldown} 秒。")
+                self.log(f"代理检测间隔 {config.interval} 秒，连续失败 {config.threshold} 轮切换，冷却 {config.cooldown} 秒；"
+                         f"每轮代理故障最多切网尝试 {config.proxy_max_switches} 次，达到上限后只检测等待。")
         else:
             self.log(f"Windows 原生监控已启动，正常检测间隔 {self.interval} 秒，链路恢复重试 {self.retry_interval} 秒。")
             self.log(f"Wi-Fi 自动恢复配置：{self.profile or '未启用'}；物理接口：{self.interface or '自动检测'}。")

@@ -10,6 +10,7 @@
 | 功能 | 行为 |
 | --- | --- |
 | A/B 故障切换 | 每 60 秒通过系统代理检测两个 HTTPS 目标；连续 2 轮全部连接失败才切换 |
+| 防反复切换 | 同一轮代理故障最多尝试切网 5 次，之后只检测等待；代理外网恢复后清零 |
 | A：ZJUWLAN | 先恢复 Wi-Fi 和地址，再检查校园网门户；未认证或过期时自动重新登录 |
 | B：ZJUWLAN-Secure | 复用 Windows 已保存配置，**不执行网页登录认证**；无线自身仍需完成 802.1X |
 | 连接失败保护 | 目标连接失败先回退原网络，再冷却 5 分钟；冷却不阻止恢复原网络 |
@@ -108,6 +109,7 @@ ZJU_WIFI_PROFILE_A=ZJUWLAN
 ZJU_WIFI_PROFILE_B=ZJUWLAN-Secure
 PROXY_CHECK_INTERVAL=60
 PROXY_FAILURE_THRESHOLD=2
+PROXY_MAX_SWITCHES=5
 WIFI_FAILOVER_COOLDOWN=300
 PROXY_CHECK_URLS=https://www.google.com/generate_204,https://www.wikipedia.org/
 ```
@@ -115,6 +117,12 @@ PROXY_CHECK_URLS=https://www.google.com/generate_204,https://www.wikipedia.org/
 值直接填写，不加引号；`$`、`#` 和密码中的引号会原样保留。进程环境变量优先于 `.env`。
 `.env.example` 默认关闭双网络模式；按需设置 `ZJU_WIFI_FAILOVER=1` 启用。
 配置名和接口名可通过 `netsh wlan show profiles`、`netsh wlan show interfaces` 确认。
+
+`PROXY_MAX_SWITCHES` 默认 5（可设为 1 至 100），限制同一轮代理故障的自动切网尝试次数。
+A→B 或 B→A 各算一次，连接请求失败也计入；达到上限后不再因代理故障换网，
+仍按原间隔经系统代理探测 HTTPS 外网并维护 A 的认证，等待任意探测目标成功后清零恢复。
+关闭代理、未知响应或冷却到期不会清零；Wi-Fi 真正掉线的恢复及安全回退不受此上限限制。
+次数保存在监控进程内，重启监控会清零；代码或配置更新后需重启用户监控才生效。
 
 **必须确认两个探测目标在 Clash 现有规则中走代理，而非 DIRECT。** 经本地代理端口发送请求
 仍可能被 Clash 分流直连，不能把这种成功当成代理节点正常。

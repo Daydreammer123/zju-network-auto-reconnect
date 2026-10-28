@@ -34,6 +34,7 @@ class FailoverConfig:
     cooldown: int
     urls: tuple[str, ...]
     link_failure_threshold: int = 2
+    proxy_max_switches: int = 5
 
     @classmethod
     def from_env(cls, interface, proxy_required=True):
@@ -44,12 +45,15 @@ class FailoverConfig:
         threshold = int(os.environ.get("PROXY_FAILURE_THRESHOLD", "2")) if proxy_required else 2
         if not 1 <= threshold <= 10:
             raise ValueError("PROXY_FAILURE_THRESHOLD 必须为 1 至 10 的整数")
+        max_switches = int(os.environ.get("PROXY_MAX_SWITCHES", "5")) if proxy_required else 5
+        if not 1 <= max_switches <= 100:
+            raise ValueError("PROXY_MAX_SWITCHES 必须为 1 至 100 的整数")
         raw_urls = os.environ.get("PROXY_CHECK_URLS", ",".join(DEFAULT_PROXY_URLS)) if proxy_required else ",".join(DEFAULT_PROXY_URLS)
         urls = validate_proxy_urls(url.strip() for url in raw_urls.split(",") if url.strip())
         return cls(a, b, interface.strip(), _seconds("PROXY_CHECK_INTERVAL" if proxy_required else "CHECK_INTERVAL", 60), threshold,
                    _seconds("PROXY_CHECK_TIMEOUT", 8) if proxy_required else 8, _seconds("WIFI_CONNECT_TIMEOUT", 30),
                    _seconds("WIFI_FAILOVER_COOLDOWN", 300), urls,
-                   _seconds("WIFI_RESTORE_FAILURE_THRESHOLD", 2))
+                   _seconds("WIFI_RESTORE_FAILURE_THRESHOLD", 2), max_switches)
 
 
 class WifiFailover:
@@ -61,6 +65,7 @@ class WifiFailover:
         self.active_profile = ""
         self.unmanaged = False
         self.failures = 0
+        self.proxy_switches = 0
         self.switched = False
         self.pending = ""
         self.pending_kind = ""
@@ -83,6 +88,7 @@ class WifiFailover:
         return ""
 
     def _reset(self):
+        # 只清理连接/连续失败状态；同一轮代理故障的切换预算仅在代理恢复后清零。
         self.failures = 0
         self.switched = False
         self.pending = ""
@@ -209,7 +215,13 @@ class WifiFailover:
             self.failures = 0
             return "missing_profile", self.config.interval
         if switching:
+            if self.proxy_switches >= self.config.proxy_max_switches:
+                return self._switch_limit()
             self.switch_source = self.active_profile
+            # 按实际发出的尝试计数；请求失败也消耗预算，回退/断线恢复不计入。
+            self.proxy_switches += 1
+            self.log(f"代理故障切换尝试 {self.proxy_switches}/{self.config.proxy_max_switches}："
+                     f"{self.active_profile} → {profile}。")
         if not connect_wifi(profile, self.config.interface):
             self.log(f"连接配置 {profile} 的请求失败；不立即反复尝试。")
             if switching:
@@ -224,6 +236,11 @@ class WifiFailover:
             self.switched = True
         self.log(f"已请求连接 {profile}，等待目标配置和 IPv4/网关就绪（等待窗口 {self.config.connect_timeout} 秒）。")
         return "switching" if switching else "reconnecting", min(5, self.config.connect_timeout)
+
+    def _switch_limit(self):
+        self.log(f"代理故障切换已达上限 {self.proxy_switches}/{self.config.proxy_max_switches}，停止代理故障切网；"
+                 "继续检测当前网络，等待代理外网恢复。")
+        return "switch_limit", max(1, self.next_probe - time.monotonic())
 
     def check_once(self):
         config = self.config
@@ -336,6 +353,9 @@ class WifiFailover:
         # B 分支不创建门户客户端，也不查询认证服务器。
         result = proxy_available(config.urls, config.timeout)
         if result.state == ProbeState.ONLINE:
+            if self.proxy_switches:
+                self.log("代理外网已恢复，清零本轮切换次数，重新允许代理故障切换。")
+            self.proxy_switches = 0
             self.failures = 0
             self.switched = False
             self.cooldown_until = 0.0
@@ -349,6 +369,8 @@ class WifiFailover:
             self.failures = min(self.failures + 1, config.threshold)
             self.log(f"{profile}：代理连接失败 {self.failures}/{config.threshold}；{result.reason}")
             state = "proxy_failed"
+            if self.proxy_switches >= config.proxy_max_switches:
+                return self._switch_limit()
             if max(self.cooldown_until, self.connection_cooldown_until) > time.monotonic():
                 state = "cooldown"
             elif self.failures >= config.threshold:

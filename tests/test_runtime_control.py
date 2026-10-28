@@ -50,7 +50,8 @@ class BootCoordinationTests(unittest.TestCase):
 
     def test_boot_configuration_does_not_depend_on_proxy_settings(self):
         with patch.dict(os.environ, {"PROXY_CHECK_URLS": "invalid", "PROXY_FAILURE_THRESHOLD": "invalid",
-                                    "PROXY_CHECK_TIMEOUT": "invalid", "PROXY_CHECK_INTERVAL": "invalid"}):
+                                    "PROXY_CHECK_TIMEOUT": "invalid", "PROXY_CHECK_INTERVAL": "invalid",
+                                    "PROXY_MAX_SWITCHES": "invalid"}):
             monitor = host.HostMonitor(interface="WLAN", boot_network=True)
         self.assertFalse(monitor.failover.probe_enabled)
 
